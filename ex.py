@@ -2,7 +2,6 @@ import pickle
 import time
 import pandas
 import mmf_meta as mmf
-from mmf_meta.core import TARGETS
 
 
 @mmf.target(

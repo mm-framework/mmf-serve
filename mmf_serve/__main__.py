@@ -1,5 +1,7 @@
 import asyncio
 import importlib
+import os
+import sys
 import click
 from mmf_meta.core import scan
 from .config import config
@@ -8,6 +10,7 @@ from .rabbit_wrapper import serve_rabbitmq
 
 @click.group()
 def cli():
+    sys.path.append(os.getcwd())
     return
 
 

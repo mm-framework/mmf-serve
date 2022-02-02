@@ -1,0 +1,1 @@
+pip install --upgrade --pre mmf-meta

@@ -38,7 +38,12 @@ async def prepped_urls(s3):
     dwn = await s3.generate_presigned_url(
         "get_object", Params={"Bucket": "mmf", "Key": "test.xlsx"}, ExpiresIn=3600
     )
-    up = await s3.generate_presigned_post("mmf", "res.xlsx", ExpiresIn=3600)
+    up = await s3.generate_presigned_url(
+        ClientMethod="put_object",
+        Params={"Bucket": "mmf", "Key": "res.xlsx"},
+        ExpiresIn=3600,
+    )
+    # up = await s3.generate_presigned_post("mmf", "res.xlsx", ExpiresIn=3600)
     yield dwn, up
 
 

@@ -4,15 +4,12 @@ import inspect
 import logging
 import traceback
 import typing
-from http.client import HTTPResponse
-from urllib import request
-
+import urllib.parse
 import orjson
-import requests
 from aio_pika import connect_robust, RobustChannel, Exchange, IncomingMessage, Message
-
 from mmf_meta.core import Target
 from mmf_meta.descriptors import DescriptorBase, JsonFile, Dict
+from requests import Session, Request
 
 lg = logging.getLogger()
 
@@ -58,18 +55,21 @@ def wrap_rabbit_s3(t: Target, msg: bytes, content_type: str):
             if isinstance(t.returns, JsonFile):
                 if not t.returns.to_s3:
                     return orjson.dumps(ret)
-            url: dict = data["_ret_url"]
-            key: str = url["fields"]["key"]
+            url = data["_ret_url"]
+            parsed = urllib.parse.urlparse(url)
+            *_, key = parsed.path.split("/")
             *_, ext = key.lower().split(".")
             ret = t.returns.to_file(ret, ext=ext)
-            ret.seek(0)
-            files = {"file": (url["fields"]["key"], ret)}
-            resp = requests.post(url["url"], data=url["fields"], files=files)
             lg.debug("sending result to %s", url)
+            with Session() as s:
+                req = Request("PUT", url, data=ret.getbuffer())
+                prepped = req.prepare()
+                prepped.headers.pop("Content-Type", None)
+                resp = s.send(prepped)
 
-            if resp.status_code != 204:
+            if resp.status_code != 200:
                 raise RuntimeError(
-                    f"could not upload result to {url}, status: {resp.status_code}, info: {resp.content}"
+                    f"could not upload result to {url}, status: {resp.status_code}, info: {resp.content} {resp.request.headers}"
                 )
             return b"ok"
         elif isinstance(t.returns, Dict) and content_type == "json":
@@ -104,7 +104,7 @@ async def serve_rabbitmq(
     lg.info("connecting %s", queue_name)
     targets = {t.name: t for t in targets}
     loop = asyncio.get_event_loop()
-    with concurrent.futures.ThreadPoolExecutor(n_proc) as pool:
+    with concurrent.futures.ProcessPoolExecutor(n_proc) as pool:
         async with queue.iterator() as queue_iter:
             async for message in queue_iter:
                 async with message.process():

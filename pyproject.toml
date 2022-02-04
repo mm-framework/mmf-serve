@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mmf-serve"
-version = "0.1.6b0"
+version = "0.1.6b1"
 description = "Часть проекта MMF отвечающая за serving"
 authors = ["Викторов Андрей Германович <andvikt@gmail.com>"]
 readme = "README.md"

@@ -1,2 +1,2 @@
-__version__ = "0.1.6b0"
+__version__ = "0.1.6b1"
 from .__main__ import cli

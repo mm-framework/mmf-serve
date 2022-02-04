@@ -44,7 +44,7 @@ async def get_exchange():
             config.exchange_name,
         )
         lg.info("get queue %s", config.queue_name)
-        tasks_queue = await ch_read.declare_queue(config.queue_name)
+        tasks_queue = await ch_read.get_queue(config.queue_name)
         return ex, tasks_queue, ch_write, ch_read
 
 

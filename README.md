@@ -12,7 +12,7 @@ mmfserve serve-rabbit
 ```dotenv
 RABBIT__USER=core
 RABBIT__PASSWORD=somesecret
-RABBIT_HOST=localhost
+RABBIT__HOST=localhost
 EXCHANGE_NAME=test_exchange
 QUEUE_NAME=test_queue
 MAIN_SCRIPT=main.py

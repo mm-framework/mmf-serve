@@ -1,17 +1,51 @@
 import asyncio
 import concurrent.futures
 import inspect
-import logging
 import traceback
 import typing
 import urllib.parse
 import orjson
-from aio_pika import connect_robust, RobustChannel, Exchange, IncomingMessage, Message
+from aio_pika import (
+    connect_robust,
+    RobustChannel,
+    Exchange,
+    IncomingMessage,
+    Message,
+    Channel,
+    Queue,
+    ExchangeType,
+)
 from mmf_meta.core import Target
 from mmf_meta.descriptors import DescriptorBase, JsonFile, Dict
 from requests import Session, Request
+from mmf_serve.config import config
+from .logger import lg, set_task_id
 
-lg = logging.getLogger()
+ex: Exchange = None
+tasks_queue: Queue = None
+ch_read: Channel = None
+ch_write: Channel = None
+_lck = asyncio.Lock()
+
+
+async def get_exchange():
+    global ex, tasks_queue, ch_write, ch_read
+    if ex is not None:
+        return ex, tasks_queue
+    else:
+        lg.info("connecting rabbitmq %s", config.rabbit.con_string)
+        con = await connect_robust(config.rabbit.con_string)
+        ch_read = await con.channel()
+        ch_write = await con.channel()
+        await ch_read.set_qos(prefetch_count=2)
+        lg.info("get exchange %s", config.exchange_name)
+        await asyncio.sleep(1)
+        ex = await ch_write.get_exchange(
+            config.exchange_name,
+        )
+        lg.info("get queue %s", config.queue_name)
+        tasks_queue = await ch_read.declare_queue(config.queue_name)
+        return ex, tasks_queue, ch_write, ch_read
 
 
 def _get_files(data, sig: inspect.Signature):
@@ -85,27 +119,18 @@ def wrap_rabbit_s3(t: Target, msg: bytes, content_type: str):
 
 
 async def serve_rabbitmq(
-    n_proc: int,
-    queue_name: str,
     targets: typing.List[Target],
-    rabbit_params: dict,
-    results_exchange: str,
 ):
-    user = rabbit_params["user"]
-    password = rabbit_params["password"]
-    host = rabbit_params["host"]
-    lg.info("connecting %s@%s", user, host)
-    connection = await connect_robust(f"amqp://{user}:{password}@{host}/")
-    channel: RobustChannel = await connection.channel()
-    exchange: Exchange = await channel.get_exchange(results_exchange)
-    lg.info("connecting %s", results_exchange)
-    await channel.set_qos(prefetch_count=1)
-    queue = await channel.get_queue(queue_name)
-    lg.info("connecting %s", queue_name)
+    exchange, queue, *_ = await get_exchange()
     targets = {t.name: t for t in targets}
     loop = asyncio.get_event_loop()
-    with concurrent.futures.ProcessPoolExecutor(n_proc) as pool:
+    sema = asyncio.Semaphore(config.n_workers)
+    with concurrent.futures.ProcessPoolExecutor(config.n_workers) as pool:
         async with queue.iterator() as queue_iter:
+            lg.info("started")
+            await exchange.publish(
+                Message(body=b"", headers={"type": "start"}), routing_key=""
+            )
             async for message in queue_iter:
                 async with message.process():
                     message: IncomingMessage
@@ -113,31 +138,56 @@ async def serve_rabbitmq(
                     task_id: str = message.headers.get("task-id", None)
                     if task_id is None:
                         continue
-                    try:
-                        target = targets.get(message.headers.get("target"))
-                        if target is None:
-                            raise KeyError(f"target with key {target} dows not exists")
-                        lg.debug("run %s", target)
-                        ret = await loop.run_in_executor(
-                            pool,
-                            wrap_rabbit_s3,
-                            target,
-                            message.body,
-                            message.content_type,
+                    await sema.acquire()  # не ставим больше задач чем можем обработать
+                    asyncio.create_task(
+                        execute_task(
+                            targets=targets,
+                            message=message,
+                            loop=loop,
+                            pool=pool,
+                            exchange=exchange,
+                            sema=sema,
                         )
-                    except Exception as exc:
-                        lg.exception("while processing %s", message)
-                        if message.content_type == "json":
-                            ret = orjson.dumps(
-                                {
-                                    "error": True,
-                                    "trace": traceback.format_exc(),
-                                    "msg": str(exc),
-                                }
-                            )
-                        else:
-                            ret = f"ERROR: {exc}".encode()
-                    lg.debug("sending results %s", ret)
-                    await exchange.publish(
-                        Message(ret, headers={"task-id": task_id}), routing_key=""
                     )
+
+
+async def execute_task(
+    targets: typing.Dict[str, Target],
+    message: IncomingMessage,
+    loop: asyncio.AbstractEventLoop,
+    pool: concurrent.futures.ProcessPoolExecutor,
+    exchange: Exchange,
+    sema: asyncio.Semaphore,
+):
+    task_id: str = message.headers.get("task-id", None)
+    with set_task_id(task_id):
+        try:
+            target = targets.get(message.headers.get("target"))
+            if target is None:
+                raise KeyError(f"target with key {target} dows not exists")
+            lg.debug("run %s", target)
+            ret = await loop.run_in_executor(
+                pool,
+                wrap_rabbit_s3,
+                target,
+                message.body,
+                message.content_type,
+            )
+        except Exception as exc:
+            lg.exception("while processing %s", message)
+            if message.content_type == "json":
+                ret = orjson.dumps(
+                    {
+                        "error": True,
+                        "trace": traceback.format_exc(),
+                        "msg": str(exc),
+                    }
+                )
+            else:
+                ret = f"ERROR: {exc}".encode()
+        finally:
+            sema.release()
+        lg.debug("sending results %s", ret)
+        await exchange.publish(
+            Message(ret, headers={"task-id": task_id, "type": "res"}), routing_key=""
+        )

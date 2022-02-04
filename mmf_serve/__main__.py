@@ -6,6 +6,7 @@ import click
 from mmf_meta.core import scan
 from .config import config
 from .rabbit_wrapper import serve_rabbitmq
+from .logger import add_rabbit_handler, lg
 
 
 @click.group()
@@ -15,26 +16,19 @@ def cli():
 
 
 @cli.command(name="serve-rabbit")
-@click.argument("module")
-@click.option("--n_proc", default=1)
-@click.option("--queue_name")
-@click.option("--results_exchange")
-def serve_rabbit(module: str, queue_name: str, results_exchange: str, n_proc):
+def serve_rabbit():
     """
     Прослушивание задач из очереди
     """
-    module = importlib.import_module(module.replace(".py", ""))
-    targets, _ = scan()
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(
-        serve_rabbitmq(
-            n_proc=n_proc,
-            queue_name=queue_name,
-            results_exchange=results_exchange,
-            rabbit_params=config.rabbit.dict(),
-            targets=targets,
+    with add_rabbit_handler(loop=loop, lg=lg):
+        module = importlib.import_module(config.main_script.replace(".py", ""))
+        targets, _ = scan()
+        loop.run_until_complete(
+            serve_rabbitmq(
+                targets=targets,
+            )
         )
-    )
 
 
 if __name__ == "__main__":

@@ -23,6 +23,8 @@ class Config(BaseSettings):
     rabbit: RabbitConfig = None
     s3: S3Settings = None
     exchange_name: str = "tasks"
+    queue_name: str = "tasks"
+    main_script: str = "main.py"
     n_workers: int = 1
     coordinator_path: str = "/run/coordinator"
     logger_path: str = "/run/logger"

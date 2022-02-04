@@ -1,5 +1,7 @@
 import logging
 
+import async_timeout
+
 logging.basicConfig(level=logging.DEBUG)
 
 import asyncio
@@ -9,9 +11,16 @@ import json
 import aioboto3
 import pytest
 from mmf_meta.core import TARGETS, scan
-from mmf_serve.rabbit_wrapper import serve_rabbitmq
+from mmf_serve.rabbit_wrapper import serve_rabbitmq, get_exchange
 from mmf_serve.config import config
-from aio_pika import connect_robust, Connection, Message, IncomingMessage
+from aio_pika import (
+    connect_robust,
+    Connection,
+    Message,
+    IncomingMessage,
+    Queue,
+    Channel,
+)
 
 
 @pytest.fixture(scope="package")
@@ -55,18 +64,26 @@ def event_loop():
 
 
 @pytest.fixture(scope="package")
-async def prep_rabbit():
-    con: Connection = await connect_robust(config.rabbit.con_string)
-    ch = await con.channel()
-    ch2 = await con.channel()
-    q_tasks = await ch.declare_queue("test_task")
-    send_results = await ch.declare_exchange("test_send_results")
-    send_tasks = await ch2.declare_exchange("test_send_tasks")
-    await q_tasks.bind(send_tasks.name, routing_key="")
-    q_results = await ch2.declare_queue("test_results")
-    await q_results.bind(send_results.name, routing_key="")
+def conf():
+    config.queue_name = "test_task"
+    config.exchange_name = "test_results"
 
-    yield q_tasks, q_results, send_results, send_tasks
+
+@pytest.fixture(scope="package")
+def add_handler(event_loop):
+    from mmf_serve.logger import add_rabbit_handler, lg
+
+    with add_rabbit_handler(event_loop, lg):
+        yield
+
+
+@pytest.fixture(scope="package")
+async def prep_rabbit(conf, event_loop, add_handler):
+
+    ex, que, ch_read, ch_write = await get_exchange()
+    qres: Queue = await ch_write.declare_queue(durable=False, exclusive=True)
+    await qres.bind(ex)
+    yield ex, que, qres, ch_read, ch_write
 
 
 @pytest.fixture
@@ -81,30 +98,38 @@ def data(prepped_urls):
 @pytest.mark.asyncio
 async def test_rabbit(prep_rabbit, targets, data):
 
-    q_tasks, q_results, send_results, send_tasks = prep_rabbit
+    ex, que, qres, ch_read, ch_write = prep_rabbit
+
     task = asyncio.create_task(
         serve_rabbitmq(
-            n_proc=1,
-            queue_name=q_tasks.name,
             targets=targets,
-            rabbit_params=config.rabbit.dict(),
-            results_exchange=send_results.name,
         )
     )
 
-    await send_tasks.publish(
+    await ch_write.default_exchange.publish(
         Message(
             data, headers={"target": "score", "task-id": "12345"}, content_type="json"
         ),
-        routing_key="",
+        routing_key=que.name,
     )
     try:
-        async with q_results.iterator() as queue_iter:
-            async for message in queue_iter:
-                async with message.process():
-                    message: IncomingMessage
-                    assert message.body == b"ok"
-                    return
+        has_start = False
+        has_logs = False
+        async with async_timeout.timeout(60):
+            async with qres.iterator() as queue_iter:
+                async for message in queue_iter:
+                    async with message.process():
+                        message: IncomingMessage
+                        if message.headers["type"] == "start":
+                            has_start = True
+                            continue
+                        elif message.headers["type"] == "res":
+                            assert message.body == b"ok"
+                            return
+                        elif message.headers["type"] == "log":
+                            has_logs = True
+        assert has_start
+        assert has_logs
     finally:
         task.cancel()
         try:

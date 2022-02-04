@@ -5,7 +5,16 @@
 
 ### Пример использования
 ```shell
-mmfserve serve_rabbit --n_proc=2 --queue_name=tasks_que --results_exchange=result_exchange main.py
+mmfserve serve-rabbit
 ```
 
+Конфигурация
+```dotenv
+RABBIT__USER=core
+RABBIT__PASSWORD=somesecret
+RABBIT_HOST=localhost
+EXCHANGE_NAME=test_exchange
+QUEUE_NAME=test_queue
+MAIN_SCRIPT=main.py
+```
 [Подробная документация](https://mm-framework.github.io/docs/)

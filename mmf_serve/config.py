@@ -42,5 +42,7 @@ class Config(BaseSettings):
 
 
 config = Config(
-    _env_file=".secrets.env", _secrets_dir=os.environ.get("SECRETS_PATH", "/var/run")
+    _env_file=".secrets.env",
+    _secrets_dir=os.environ.get("SECRETS_PATH", "/run/secrets"),
 )
+print(config)

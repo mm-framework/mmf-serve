@@ -35,3 +35,7 @@ def serve_rabbit(module: str, queue_name: str, results_exchange: str, n_proc):
             targets=targets,
         )
     )
+
+
+if __name__ == "__main__":
+    cli()

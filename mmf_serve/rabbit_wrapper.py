@@ -131,7 +131,7 @@ async def serve_rabbitmq(
     sema = asyncio.Semaphore(config.n_workers)
     with concurrent.futures.ProcessPoolExecutor(config.n_workers) as pool:
         async with queue.iterator() as queue_iter:
-            lg.info("started")
+            lg.info("rabbit serving started")
             await exchange.publish(
                 Message(body=b"", headers={"type": "start"}), routing_key=""
             )

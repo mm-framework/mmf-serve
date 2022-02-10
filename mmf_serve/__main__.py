@@ -20,10 +20,15 @@ def serve_rabbit():
     """
     Прослушивание задач из очереди
     """
+    lg.info("starting")
     loop = asyncio.get_event_loop()
     with add_rabbit_handler(loop=loop, lg=lg):
-        module = importlib.import_module(config.main_script.replace(".py", ""))
+        script = config.main_script.replace(".py", "")
+        lg.info("loading module %s", script)
+        module = importlib.import_module(script)
+        lg.info("module %s loaded", script)
         targets, _ = scan()
+        lg.debug("targets loaded: %s", targets)
         loop.run_until_complete(
             serve_rabbitmq(
                 targets=targets,

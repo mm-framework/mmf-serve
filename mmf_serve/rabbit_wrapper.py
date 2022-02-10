@@ -1,5 +1,6 @@
 import asyncio
 import concurrent.futures
+import functools
 import inspect
 import traceback
 import typing
@@ -61,7 +62,11 @@ def _get_files(data, sig: inspect.Signature):
     return args
 
 
-def wrap_rabbit_s3(t: Target, msg: bytes, content_type: str):
+def wrap_rabbit_s3(
+    t: Target,
+    msg: bytes,
+    content_type: str,
+):
     """
     Оборачиваем таргет как функцию, готовую принимать сообщения от rabbitmq
     Все файлы в таком случае будут ожидаться как ссылки на сетевое хранилище.
@@ -73,7 +78,6 @@ def wrap_rabbit_s3(t: Target, msg: bytes, content_type: str):
     :return:
     """
     sig = inspect.signature(t.foo)
-
     if content_type == "json":
         data = orjson.loads(msg)
     else:
@@ -168,10 +172,12 @@ async def execute_task(
             lg.debug("run %s", target)
             ret = await loop.run_in_executor(
                 pool,
-                wrap_rabbit_s3,
-                target,
-                message.body,
-                message.content_type,
+                functools.partial(
+                    wrap_rabbit_s3,
+                    target=target,
+                    msg=message.body,
+                    content_type=message.content_type,
+                ),
             )
         except Exception as exc:
             lg.exception("while processing %s", message)
@@ -188,6 +194,7 @@ async def execute_task(
         finally:
             sema.release()
         lg.debug("sending results %s", ret)
-        await exchange.publish(
-            Message(ret, headers={"task-id": task_id, "type": "res"}), routing_key=""
-        )
+        headers = {"task-id": task_id, "type": "res"}
+        if "user" in message.headers:
+            headers["user"] = message.headers["user"]
+        await exchange.publish(Message(ret, headers=headers), routing_key="")

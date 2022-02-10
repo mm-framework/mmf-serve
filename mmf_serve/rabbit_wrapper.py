@@ -174,7 +174,7 @@ async def execute_task(
                 pool,
                 functools.partial(
                     wrap_rabbit_s3,
-                    target=target,
+                    t=target,
                     msg=message.body,
                     content_type=message.content_type,
                 ),

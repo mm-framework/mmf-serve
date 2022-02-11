@@ -89,16 +89,17 @@ async def prep_rabbit(conf, event_loop, add_handler):
 @pytest.fixture
 def data(prepped_urls):
     dwn, up = prepped_urls
-    data = {"_ret_url": up, "df": dwn}
+    data = {"df": dwn}
     data = json.dumps(data)
     print(data)
-    yield data.encode()
+    yield data.encode(), up
 
 
 @pytest.mark.asyncio
 async def test_rabbit(prep_rabbit, targets, data):
 
     ex, que, qres, ch_read, ch_write = prep_rabbit
+    data, up = data
 
     task = asyncio.create_task(
         serve_rabbitmq(
@@ -108,7 +109,9 @@ async def test_rabbit(prep_rabbit, targets, data):
 
     await ch_write.default_exchange.publish(
         Message(
-            data, headers={"target": "score", "task-id": "12345"}, content_type="json"
+            data,
+            headers={"target": "score", "task-id": "12345", "ret_url": up},
+            content_type="json",
         ),
         routing_key=que.name,
     )

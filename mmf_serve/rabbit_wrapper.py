@@ -62,11 +62,7 @@ def _get_files(data, sig: inspect.Signature):
     return args
 
 
-def wrap_rabbit_s3(
-    t: Target,
-    msg: bytes,
-    content_type: str,
-):
+def wrap_rabbit_s3(t: Target, msg: bytes, content_type: str, ret_url: str = None):
     """
     Оборачиваем таргет как функцию, готовую принимать сообщения от rabbitmq
     Все файлы в таком случае будут ожидаться как ссылки на сетевое хранилище.
@@ -82,9 +78,9 @@ def wrap_rabbit_s3(
         data = orjson.loads(msg)
     else:
         raise TypeError(f"not compatible content_type {content_type}")
-    if t.returns and t.returns.is_file and "_ret_url" not in data:
+    if t.returns and t.returns.is_file and ret_url is None:
         raise ValueError(
-            f"{t.name} returns file, ret_url must be provided in order to upload results"
+            f"{t.name} returns file, ret_url header must be set in order to upload results"
         )
     args = _get_files(data, sig)
     ret = t.foo(**args)
@@ -93,21 +89,20 @@ def wrap_rabbit_s3(
             if isinstance(t.returns, JsonFile):
                 if not t.returns.to_s3:
                     return orjson.dumps(ret)
-            url = data["_ret_url"]
-            parsed = urllib.parse.urlparse(url)
+            parsed = urllib.parse.urlparse(ret_url)
             *_, key = parsed.path.split("/")
             *_, ext = key.lower().split(".")
             ret = t.returns.to_file(ret, ext=ext)
-            lg.debug("sending result to %s", url)
+            lg.debug("sending result to %s", ret_url)
             with Session() as s:
-                req = Request("PUT", url, data=ret.getbuffer())
+                req = Request("PUT", ret_url, data=ret.getbuffer())
                 prepped = req.prepare()
                 prepped.headers.pop("Content-Type", None)
                 resp = s.send(prepped)
 
             if resp.status_code != 200:
                 raise RuntimeError(
-                    f"could not upload result to {url}, status: {resp.status_code}, info: {resp.content} {resp.request.headers}"
+                    f"could not upload result to {ret_url}, status: {resp.status_code}, info: {resp.content} {resp.request.headers}"
                 )
             return b"ok"
         elif isinstance(t.returns, Dict) and content_type == "json":
@@ -141,6 +136,7 @@ async def serve_rabbitmq(
                     lg.debug(f"process message %s", message)
                     task_id: str = message.headers.get("task-id", None)
                     if task_id is None:
+                        lg.warning("no task-id provided")
                         continue
                     await sema.acquire()  # не ставим больше задач чем можем обработать
                     asyncio.create_task(
@@ -177,6 +173,7 @@ async def execute_task(
                     t=target,
                     msg=message.body,
                     content_type=message.content_type,
+                    ret_url=message.headers.get("ret_url", None),
                 ),
             )
         except Exception as exc:
@@ -193,8 +190,8 @@ async def execute_task(
                 ret = f"ERROR: {exc}".encode()
         finally:
             sema.release()
-        lg.debug("sending results %s", ret)
         headers = {"task-id": task_id, "type": "res"}
+        lg.debug("sending results %s with headers %s", ret, headers)
         if "user" in message.headers:
             headers["user"] = message.headers["user"]
         await exchange.publish(Message(ret, headers=headers), routing_key="")

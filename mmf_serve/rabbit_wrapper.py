@@ -177,6 +177,10 @@ async def execute_task(
                     ret_url=message.headers.get("ret_url", None),
                 ),
             )
+            if message.content_type == "json":
+                ret = orjson.dumps({"payload": ret})
+            else:
+                ret = str(ret)
         except Exception as exc:
             headers["err"] = "t"
             lg.exception("while processing %s", message)

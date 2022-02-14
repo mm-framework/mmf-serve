@@ -181,6 +181,8 @@ async def execute_task(
                 ret = orjson.dumps({"payload": ret})
             elif ret:
                 ret = str(ret)
+            else:
+                ret = b""
         except Exception as exc:
             headers["err"] = "t"
             lg.exception("while processing %s", message)

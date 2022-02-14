@@ -112,7 +112,7 @@ def wrap_rabbit_s3(t: Target, msg: bytes, content_type: str, ret_url: str = None
                 )
             return orjson.dumps(ret)
         else:
-            return b"ok"
+            return ret
 
     return
 

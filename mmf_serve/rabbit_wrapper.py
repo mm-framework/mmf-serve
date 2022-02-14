@@ -104,7 +104,7 @@ def wrap_rabbit_s3(t: Target, msg: bytes, content_type: str, ret_url: str = None
                 raise RuntimeError(
                     f"could not upload result to {ret_url}, status: {resp.status_code}, info: {resp.content} {resp.request.headers}"
                 )
-            return b"ok"
+            return None
         elif isinstance(t.returns, Dict) and content_type == "json":
             if not isinstance(ret, dict):
                 raise TypeError(
@@ -177,9 +177,9 @@ async def execute_task(
                     ret_url=message.headers.get("ret_url", None),
                 ),
             )
-            if message.content_type == "json":
+            if message.content_type == "json" and ret:
                 ret = orjson.dumps({"payload": ret})
-            else:
+            elif ret:
                 ret = str(ret)
         except Exception as exc:
             headers["err"] = "t"

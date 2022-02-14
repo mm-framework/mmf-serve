@@ -161,6 +161,7 @@ async def execute_task(
 ):
     task_id: str = message.headers.get("task-id", None)
     with set_task_id(task_id):
+        headers = {"task-id": task_id, "type": "res"}
         try:
             target = targets.get(message.headers.get("target"))
             if target is None:
@@ -177,6 +178,7 @@ async def execute_task(
                 ),
             )
         except Exception as exc:
+            headers["err"] = "t"
             lg.exception("while processing %s", message)
             if message.content_type == "json":
                 ret = orjson.dumps(
@@ -190,8 +192,7 @@ async def execute_task(
                 ret = f"ERROR: {exc}".encode()
         finally:
             sema.release()
-        headers = {"task-id": task_id, "type": "res"}
-        lg.debug("sending results %s with headers %s", ret, headers)
         if "user" in message.headers:
             headers["user"] = message.headers["user"]
+        lg.debug("sending results %s with headers %s", ret, headers)
         await exchange.publish(Message(ret, headers=headers), routing_key="")

@@ -127,7 +127,7 @@ async def test_rabbit(prep_rabbit, targets, data):
                             has_start = True
                             continue
                         elif message.headers["type"] == "res":
-                            assert message.body == b"ok"
+                            assert message.body == b""
                             return
                         elif message.headers["type"] == "log":
                             has_logs = True

@@ -1,22 +1,22 @@
 [tool.poetry]
 name = "mmf-serve"
-version = "0.1.6"
+version = "0.1.7"
 description = "Часть проекта MMF отвечающая за serving"
 authors = ["Викторов Андрей Германович <andvikt@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.7"
-orjson = {version = "^3.2.0"}
-cryptography = {version = "^36.0.0"}
-requests = "^2.0.1"
-mmf-meta = {version = "^0.1.10", extras=["all"]}
-PyTurboJPEG = "^1.0.1"
-aiofile = "^3.0.0"
+orjson = "^3"
+cryptography = "^36"
+requests = "^2"
+mmf-meta = {version = "^0.1.11", extras=["all"]}
+PyTurboJPEG = "^1"
+aiofile = "^3"
 python-multipart = {version = "^0.0.5", optional = true}
-pydantic = {extras = ["dotenv"], version = "^1.9.0"}
-fastapi = {version = "^0.64.0", optional = true}
-aio-pika = {version = "^6.0.1", optional = true}
+pydantic = {extras = ["dotenv"], version = "^1.9"}
+fastapi = {version = "^0.64", optional = true}
+aio-pika = {version = "^6", optional = true}
 
 [tool.poetry.extras]
 fastapi = ['fastapi', 'all']
@@ -24,9 +24,9 @@ python-multipart = ['fastapi', 'all']
 aio-pika = ['rabbit', 'all']
 
 [tool.poetry.dev-dependencies]
-pytest = "^6.2.5"
-pytest-asyncio = "^0.17.2"
-aioboto3 = "^9.3.1"
+pytest = "^6"
+pytest-asyncio = "^0.17"
+aioboto3 = "^9"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
